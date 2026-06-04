@@ -36,6 +36,9 @@ class AndroidEnvClient:
         self.base_url = url
         self.device = device
         self.step_wait_time = step_wait_time
+        # Last real screenshot, reused when a step opts out of the post-step
+        # screencap via action.action_json["skip_screenshot"] (relay-patch).
+        self._last_screenshot: Image.Image | None = None
         self._task_metadata = {}
         self._current_task_type = None
         self._initialized = False
@@ -129,6 +132,7 @@ class AndroidEnvClient:
         image_base64 = response.json()["b64_png"]
         image = self._base64_to_pil(image_base64)
 
+        self._last_screenshot = image
         return image
 
     def get_observation(self, type="screenshot", wait_to_stabilize: bool = True) -> dict:
@@ -166,7 +170,22 @@ class AndroidEnvClient:
         if response.status_code != 200 and action.action_type == "ask_user":
             raise RuntimeError(f"Step action failed (HTTP {response.status_code}): {response.text}")
 
-        res = self.get_screenshot(wait_to_stabilize=True)
+        # relay-patch: when the agent knows the *next* planned step does not
+        # consume the incoming screenshot (deterministic taps/inputs), it tags
+        # the action with action_json["skip_screenshot"]. Skipping the post-step
+        # screencap (and its wait_to_stabilize sleep) removes ~1s of dead time
+        # per step. We return the last real screenshot so its true resolution is
+        # preserved (predict reads screenshot.size for coordinate math); the
+        # deterministic step never reads the pixels. ask_user always re-captures.
+        skip_screenshot = bool(
+            (action.action_json or {}).get("skip_screenshot")
+            and action.action_type != "ask_user"
+            and self._last_screenshot is not None
+        )
+        if skip_screenshot:
+            res = self._last_screenshot
+        else:
+            res = self.get_screenshot(wait_to_stabilize=True)
         ask_user_response = None
         if action.action_type == "ask_user" and response.text is not None:
             message = json.loads(response.text)
