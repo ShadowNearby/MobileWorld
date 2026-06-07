@@ -316,10 +316,7 @@ If you find MobileWorld useful in your research, please cite our paper:
 
 ```bibtex
 @inproceedings{kong2025mobileworld,
-      title={MobileWorld: Benchmarking 
-Autonomous Mobile Agents in Agent-User 
-Interactive, and MCP-Augmented 
-Environments},
+      title={MobileWorld: Benchmarking Autonomous Mobile Agents in Agent-User Interactive, and MCP-Augmented Environments},
       author={Quyu Kong and Xu Zhang and Zhenyu Yang and Nolan Gao and Chen Liu and Panrong Tong and Chenglin Cai and Hanzhang Zhou and Jianan Zhang and Liangyu Chen and Zhidan Liu and Steven Hoi and Yue Wang},
       booktitle={Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (ACL)},
       year={2026},
