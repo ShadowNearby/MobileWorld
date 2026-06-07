@@ -212,6 +212,15 @@ def get_state(device: str = Query(..., description="adb device ID")):
     return response
 
 
+@app.get("/apps/installed")
+def get_installed_apps(device: str = Query(..., description="adb device ID")):
+    """Friendly app names installed on the device that `open_app` can resolve."""
+    ctr = ensure_controller(device)
+    names = ctr.installed_app_names()
+    logger.info(f"[APPS] device={device} installed known apps: {len(names)}")
+    return names
+
+
 @app.get("/screenshot")
 def get_screenshot(
     device: str = Query(...),

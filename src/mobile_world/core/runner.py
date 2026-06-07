@@ -55,6 +55,12 @@ def _execute_single_task(
     obs = env.initialize_task(task_name=task_name)
     agent.initialize(task_goal)
 
+    # Tell the agent which apps are actually installed on this device so the
+    # `open_app` action picks `app_name` from a real set (falls back to the
+    # static list inside the agent if the env/server can't provide it).
+    if hasattr(agent, "set_available_apps") and hasattr(env, "get_installed_app_names"):
+        agent.set_available_apps(env.get_installed_app_names())
+
     while True:
         step += 1
 

@@ -3,6 +3,54 @@
 This file tracks all dated updates to MobileWorld. The README only keeps the
 three most recent entries; everything else lives here.
 
+## 2026-06-07: Direct App Launch (`open_app`)
+
+Agents can now launch an application **directly by name** instead of returning to
+the home screen and swiping through launcher pages / the app drawer to find its
+icon. The `open_app` action and its `controller.launch_app` plumbing already
+existed end-to-end (`server.py` → `AndroidController.launch_app`); this update
+closes the two gaps that kept agents from using it:
+
+- **Action space:** added an `open_app` row to the `general_e2e` prompt
+  ([`src/mobile_world/agents/utils/prompts/general_e2e.py`](src/mobile_world/agents/utils/prompts/general_e2e.py)).
+  Format: `{"action_type":"open_app", "app_name":"Maps"}`. App launching is the
+  **first, MANDATORY execution principle**: the model MUST use `open_app` and is
+  explicitly forbidden from tapping an icon, swiping the launcher, or searching a
+  browser to open an app (with a worked example in the output-format section). A
+  soft "prefer open_app" hint was not enough — Qwen still tapped the visible
+  Maps icon and misopened Chrome; with the hard rule it now issues
+  `open_app "Maps"` as step 1.
+- **Launcher robustness:** `AndroidController.launch_app`
+  ([`src/mobile_world/runtime/controller.py`](src/mobile_world/runtime/controller.py))
+  is no longer limited to the `APP_LOWER_DICT` name→package allowlist. If the
+  name is not in the allowlist but looks like a package id and is actually
+  installed (verified by the new `_is_installed_package` helper via
+  `pm list packages`), it is launched directly. So both `open_app "Maps"`
+  (friendly name) and `open_app "com.google.android.apps.maps"` (raw package)
+  work.
+
+- **Device-aware app list in the prompt:** the `general_e2e` system prompt now
+  injects the names of apps **actually installed on the connected device** so the
+  model picks `open_app`'s `app_name` from a real set instead of guessing (and is
+  reminded it can otherwise pass a raw package id). The list flows
+  `AndroidController.installed_app_names()` (installed packages ∩ known
+  `APP_DICT`/`COMMON_APP_MAPPER` names, English name preferred) → server
+  `GET /apps/installed` → `AndroidEnvClient.get_installed_app_names()` → the
+  runner calls `agent.set_available_apps(...)` after task init. If the
+  env/server can't provide it, the agent falls back to the full static
+  `available_app_names()` list; omitting `available_apps` renders the prompt
+  unchanged. On a Pixel 9 this trims the advertised set from ~181 static names to
+  the ~32 apps truly present.
+- **Test coverage:** `open_app` is now exercised as a first-class action in the
+  test flow via [`tests/test_open_app_action.py`](tests/test_open_app_action.py),
+  covering the full general_e2e path (prompt advertises it → `parse_action` /
+  `parse_response_to_action` → `JSONAction` → `AndroidController.launch_app`
+  dispatch, including the friendly-name, raw-package, unknown-app, and
+  `None` cases). Run with `uv run --extra dev pytest tests/`.
+
+Verified on a physical device (Pixel 9): launching by raw package name through
+the new path successfully cold-starts the app.
+
 ## 2026-04-29: Head-to-Head Arena & Community Submissions🔥
 
 - 🆚 **New Arena Comparison Page:** Compare any two models side-by-side at [tongyi-mai.github.io/MobileWorld/arena](https://tongyi-mai.github.io/MobileWorld/arena). Renders both trajectories step-by-step with screenshots and thinking traces, plus a confusion matrix to filter tasks by outcome (both pass / both fail / one wins / the other wins).

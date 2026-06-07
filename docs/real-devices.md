@@ -87,3 +87,36 @@ Replace `--model_name`, `--llm_base_url`, and `--api_key` with the model and cre
 | Seed-2.0-Pro      | `seed_agent`  | Relative (0–1000) | Best with specialized `seed_agent` agent type |
 
 > **Tip:** You can view the live device screen at any time with `uv run mw device`.
+
+## Direct App Launch (`open_app`)
+
+To open an app, the agent does **not** need to go back to the home screen and
+swipe through launcher pages or the app drawer to find its icon. The
+`general_e2e` action space exposes an `open_app` action that launches an app
+directly:
+
+```json
+{"action_type": "open_app", "app_name": "Maps"}
+```
+
+`app_name` accepts either a **friendly name** from the built-in name→package
+mapping (`APP_LOWER_DICT`, e.g. `Maps`, `Chrome`, `Settings`, `Gemini`) or a
+**raw package id** of any app installed on the device
+(e.g. `com.google.android.apps.maps`). Unknown package ids are validated against
+`pm list packages` before launch; if the name can't be resolved, `launch_app`
+fails and logs the list of known app names.
+
+To stop the model from guessing names, the `general_e2e` prompt is **populated
+with the apps actually installed on the connected device**: the runner queries
+`GET /apps/installed` (→ `AndroidController.installed_app_names()`, the
+intersection of installed packages with the known name mappings) and injects the
+result before each run. If the server can't provide the list, the agent falls
+back to the full static name set.
+
+`open_app` is the **mandatory** way to open an app: it is the first execution
+principle in the `general_e2e` prompt, which forbids opening an app by tapping
+its icon, swiping the launcher, or searching a browser. A soft "prefer
+`open_app`" hint proved insufficient in practice — Qwen still tapped the visible
+icon (and occasionally opened the wrong app); the hard rule + a worked example
+make it reliably emit `open_app` as the first step. The model may only fall back
+to tapping an icon if an `open_app` for that app has already failed.

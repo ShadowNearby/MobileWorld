@@ -257,11 +257,31 @@ class AndroidController:
     def launch_app(self, app_name: str) -> AdbResponse:
         command = ""
 
-        if app_name is not None and app_name.lower() in APP_LOWER_DICT:
-            command = f"adb -s {self.device} shell monkey -p {APP_LOWER_DICT[app_name.lower()]} -c android.intent.category.LAUNCHER 1"
+        if app_name is None:
+            return AdbResponse(
+                success=False,
+                error="Failed to launch the app: app_name is None",
+                command=command,
+            )
+
+        # 1) Known app: resolve its package via the name->package mapping.
+        package = APP_LOWER_DICT.get(app_name.lower())
+
+        # 2) Unknown name that already looks like a package id (e.g.
+        #    "com.google.android.apps.maps") and is actually installed:
+        #    launch it directly without requiring a mapping entry.
+        if package is None and self._is_installed_package(app_name):
+            package = app_name
+
+        if package is not None:
+            command = (
+                f"adb -s {self.device} shell monkey -p {package} "
+                f"-c android.intent.category.LAUNCHER 1"
+            )
             ret = execute_adb(command)
             if ret.success:
                 return ret
+
         logger.warning(
             f"Failed to launch the app: {app_name}. Available app list: {list(APP_LOWER_DICT.keys())}"
         )
@@ -270,6 +290,47 @@ class AndroidController:
             error=f"Failed to launch the app: {app_name}",
             command=command,
         )
+
+    def _is_installed_package(self, package: str) -> bool:
+        """Best-effort check that `package` is an installed package id."""
+        if "." not in package:
+            return False
+        ret = execute_adb(
+            f"adb -s {self.device} shell pm list packages {shlex.quote(package)}"
+        )
+        if not ret.success:
+            return False
+        # `pm list packages <filter>` does a substring match, so confirm the
+        # exact "package:<id>" line is present.
+        return f"package:{package}" in (ret.output or "")
+
+    def installed_app_names(self) -> list[str]:
+        """Friendly names of installed apps that `open_app` can resolve.
+
+        Intersects the device's installed packages with the known
+        package->name mappings (`APP_DICT` + `COMMON_APP_MAPPER`) so the agent
+        prompt advertises only apps that are actually present on THIS device.
+        ASCII (English) names are preferred over their Chinese aliases for the
+        same package. Returns [] if the device query fails.
+        """
+        ret = execute_adb(f"adb -s {self.device} shell pm list packages")
+        if not ret.success:
+            logger.warning("installed_app_names: `pm list packages` failed")
+            return []
+        installed = {
+            line.split(":", 1)[1].strip()
+            for line in (ret.output or "").splitlines()
+            if line.startswith("package:")
+        }
+        # Build package -> friendly name, preferring APP_DICT (English-leaning)
+        # entries, then filling gaps from COMMON_APP_MAPPER.
+        pkg_to_name: dict[str, str] = {}
+        for name, pkg in APP_DICT.items():
+            pkg_to_name.setdefault(pkg, name)
+        for pkg, name in COMMON_APP_MAPPER.items():
+            pkg_to_name.setdefault(pkg, name)
+        names = {pkg_to_name[pkg] for pkg in installed if pkg in pkg_to_name}
+        return sorted(names, key=lambda n: (not n.isascii(), n.casefold()))
 
     def answer(self, answer_str: str) -> None:
         self.interaction_cache = answer_str

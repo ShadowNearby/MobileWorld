@@ -9,7 +9,7 @@ from mobile_world.agents.base import MCPAgent
 from mobile_world.agents.utils.helpers import pil_adaptive_resize, pil_to_base64
 from mobile_world.agents.utils.prompts import GENERAL_E2E_PROMPT_TEMPLATE
 from mobile_world.runtime.utils.helpers import mask_api_key, pretty_print_messages
-from mobile_world.runtime.utils.models import JSONAction
+from mobile_world.runtime.utils.models import JSONAction, available_app_names
 from mobile_world.runtime.utils.parsers import parse_json_markdown
 
 ACTION_ALIASES = {
@@ -250,6 +250,14 @@ class GeneralE2EAgentMCP(MCPAgent):
         self.history_images = []
         self.history_responses = []
         self.actions = []
+        # Apps the agent may pass to `open_app`. When the runner injects the
+        # device's actually-installed apps this is set; otherwise we fall back to
+        # the full static name list at render time.
+        self.available_apps: list[str] | None = None
+
+    def set_available_apps(self, app_names: list[str] | None) -> None:
+        """Inject the list of installed app names for the `open_app` action."""
+        self.available_apps = list(app_names) if app_names else None
 
     def initialize_hook(self, instruction: str) -> None:
         """Hook for initializing the agent with instruction."""
@@ -361,6 +369,7 @@ class GeneralE2EAgentMCP(MCPAgent):
                 "content": GENERAL_E2E_PROMPT_TEMPLATE.render(
                     tools="\n".join([json.dumps(tool, ensure_ascii=False) for tool in self.tools]),
                     scale_factor=active_scale_factor,
+                    available_apps=", ".join(self.available_apps or available_app_names()),
                 ),
             },
             # UPDATED 2026-04-21: user instruction may get ignored by opus-4.7 occasionally,

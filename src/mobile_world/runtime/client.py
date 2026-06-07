@@ -310,6 +310,24 @@ class AndroidEnvClient:
         response.raise_for_status()
         return response.json()
 
+    def get_installed_app_names(self) -> list[str]:
+        """Best-effort: friendly names of installed apps for `open_app`.
+
+        Returns an empty list if the server does not support the endpoint or the
+        call fails, so callers can fall back to a static app list.
+        """
+        try:
+            self._ensure_initialized()
+            response = requests.get(
+                f"{self.base_url}/apps/installed", params={"device": self.device}
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data if isinstance(data, list) else []
+        except Exception as e:
+            logger.warning(f"get_installed_app_names failed, falling back to static list: {e}")
+            return []
+
     def get_task_metadata(self, task_type: str) -> dict:
         """Gets the metadata of the current task."""
         self._ensure_initialized()

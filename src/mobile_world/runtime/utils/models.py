@@ -422,6 +422,29 @@ COMMON_APP_MAPPER = {
 }
 
 
+def available_app_names() -> list[str]:
+    """Human-readable app names that `open_app` can resolve to a package.
+
+    These are the friendly names that `AndroidController.launch_app` knows how to
+    map to a package id (via `APP_DICT` and `COMMON_APP_MAPPER`). Injected into
+    the agent prompt so the model picks `open_app`'s `app_name` from a known set
+    instead of guessing. Deduplicated case-insensitively; ASCII names first, then
+    the rest, each group sorted alphabetically.
+    """
+    names = list(APP_DICT.keys()) + list(COMMON_APP_MAPPER.values())
+    seen: set[str] = set()
+    unique: list[str] = []
+    for name in names:
+        name = (name or "").strip()
+        key = name.casefold()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        unique.append(name)
+    unique.sort(key=lambda n: (not n.isascii(), n.casefold()))
+    return unique
+
+
 # FastAPI Server Models
 class InstanceInfo(BaseModel):
     docker_port_local: int | None = None
