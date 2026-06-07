@@ -3,6 +3,7 @@
 
 import asyncio
 import base64
+import os
 import threading
 import time
 from pathlib import Path
@@ -386,8 +387,12 @@ def step(req: StepRequest):
             ret = ctr.launch_app(app_name)
 
         elif action_type == WAIT:
-            logger.info("[STEP] Executing wait for 1 second")
-            time.sleep(1.0)
+            # Sleep is tunable via MW_WAIT_SECONDS (default 1.0 = upstream
+            # behaviour). Agents that poll with no-op WAIT actions and do their
+            # own stability detection can lower this to cut per-poll latency.
+            wait_s = float(os.getenv("MW_WAIT_SECONDS", "1.0"))
+            logger.info(f"[STEP] Executing wait for {wait_s} second(s)")
+            time.sleep(wait_s)
             ret = "OK"
 
         elif action_type == ANSWER:

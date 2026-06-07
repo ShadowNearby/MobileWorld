@@ -107,6 +107,14 @@ def pretty_print_messages(messages: list[dict], max_messages: int = 2) -> None:
     logger.info(final_str)
 
 
+# Hard wall-clock cap on every adb subprocess. Without it a stalled adb call
+# (USB hiccup, `am broadcast` waiting on an unresponsive receiver, a wedged
+# screencap) blocks the server's request handler — and the client waiting on
+# it — forever. With it, a stall surfaces as a failed AdbResponse the caller
+# can retry/skip instead of hanging the whole run. Tunable via MW_ADB_TIMEOUT.
+_ADB_TIMEOUT = float(os.getenv("MW_ADB_TIMEOUT", "30"))
+
+
 def execute_adb(adb_command: str, output: bool = True, root_required=False) -> AdbResponse:
     if not adb_command.startswith("adb "):
         adb_command = "adb " + adb_command
@@ -119,6 +127,7 @@ def execute_adb(adb_command: str, output: bool = True, root_required=False) -> A
             capture_output=True,
             text=True,
             env=env,
+            timeout=_ADB_TIMEOUT,
         )
         if whoami_check.returncode == 0 and whoami_check.stdout.strip() != "root":
             root_attempt = subprocess.run(
@@ -127,6 +136,7 @@ def execute_adb(adb_command: str, output: bool = True, root_required=False) -> A
                 capture_output=True,
                 text=True,
                 env=env,
+                timeout=_ADB_TIMEOUT,
             )
             if root_attempt.returncode != 0:
                 if output:
@@ -145,6 +155,7 @@ def execute_adb(adb_command: str, output: bool = True, root_required=False) -> A
                 capture_output=True,
                 text=True,
                 env=env,
+                timeout=_ADB_TIMEOUT,
             )
             if verify_check.returncode != 0 or verify_check.stdout.strip() != "root":
                 if output:
@@ -156,13 +167,24 @@ def execute_adb(adb_command: str, output: bool = True, root_required=False) -> A
                     command=adb_command,
                 )
 
-    result = subprocess.run(
-        adb_command,
-        shell=True,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
+    try:
+        result = subprocess.run(
+            adb_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=_ADB_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        if output:
+            logger.error(f"adb command timed out after {_ADB_TIMEOUT}s: {adb_command}")
+        return AdbResponse(
+            success=False,
+            error=f"adb command timed out after {_ADB_TIMEOUT}s",
+            return_code=-1,
+            command=adb_command,
+        )
     if result.returncode == 0:
         return AdbResponse(
             success=True,

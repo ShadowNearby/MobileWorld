@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 import requests
@@ -111,6 +112,13 @@ def _start_server_background(port: int = 6800, suite_family: str = "mobile_world
     _console.print(f"[cyan]Starting MobileWorld server on port {port}...[/cyan]")
 
     try:
+        # Stream stdout+stderr to a logfile, NOT subprocess.PIPE. A PIPE that
+        # nobody drains fills its ~64KB kernel buffer mid-run; the server's
+        # logging thread then blocks on the write (anon_pipe_write) and stops
+        # answering requests, hanging every client on it. A file never blocks
+        # the writer and keeps the logs for debugging.
+        log_path = os.path.join(tempfile.gettempdir(), f"mw_server_{port}.log")
+        server_log = open(log_path, "w")
         _server_process = subprocess.Popen(
             [
                 sys.executable,
@@ -122,16 +130,21 @@ def _start_server_background(port: int = 6800, suite_family: str = "mobile_world
                 "--port",
                 str(port),
             ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=server_log,
+            stderr=subprocess.STDOUT,
         )
+        _console.print(f"[dim]Server logs → {log_path}[/dim]")
 
         server_url = f"http://localhost:{port}"
         for _ in range(30):
             poll_result = _server_process.poll()
             if poll_result is not None:
-                _, stderr = _server_process.communicate(timeout=1)
-                error_msg = stderr.decode() if stderr else "Unknown error"
+                server_log.flush()
+                try:
+                    with open(log_path) as f:
+                        error_msg = f.read()[-2000:] or "Unknown error"
+                except Exception:
+                    error_msg = "Unknown error"
                 if "address already in use" in error_msg.lower():
                     _console.print(f"[red]Port {port} is already in use.[/red]")
                 else:
