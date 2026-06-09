@@ -328,6 +328,14 @@ def run_user_task(
 
     agent = create_agent(agent_type, model_name, llm_base_url, api_key, env=env, **kwargs)
 
+    # Tell the agent which apps are actually installed on THIS device so
+    # `open_app` picks from a real set instead of guessing (e.g. "Gallery" on a
+    # Pixel is Google Photos, not the emulator gallery). The benchmark path
+    # (core/runner.py) already does this; the ad-hoc user-task path did not, so
+    # the agent used to hallucinate app names and loop on a no-op open_app.
+    if hasattr(agent, "set_available_apps") and hasattr(env, "get_installed_app_names"):
+        agent.set_available_apps(env.get_installed_app_names())
+
     start_time = time.time()
     try:
         steps = _execute_user_task(

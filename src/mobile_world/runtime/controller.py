@@ -11,12 +11,40 @@ from mobile_world.runtime.utils.helpers import (
     execute_adb,
     time_within_ten_secs,
 )
-from mobile_world.runtime.utils.models import APP_DICT, COMMON_APP_MAPPER
+from mobile_world.runtime.utils.models import (
+    APP_DICT,
+    COMMON_APP_MAPPER,
+    REAL_DEVICE_APP_DICT,
+)
 
 APP_LOWER_DICT = {
     app_name.lower(): package_name for package_name, app_name in COMMON_APP_MAPPER.items()
 }
 APP_LOWER_DICT.update({k.lower(): v for k, v in APP_DICT.items()})
+
+# Friendly name (lowercased) -> ordered list of candidate packages. Unlike
+# APP_LOWER_DICT (one package per name), this keeps EVERY package a name maps to
+# across all dicts, so a name shared by the emulator image and a real device
+# (e.g. "Gallery" -> emulator gallery app AND Google Photos, "Camera" ->
+# camera2 AND GoogleCamera) yields both candidates. `launch_app` then launches
+# whichever is actually installed. Order: COMMON, APP_DICT, then real-device.
+APP_LOWER_MULTI: dict[str, list[str]] = {}
+
+
+def _register_app_name(name: str, package: str) -> None:
+    if not name or not package:
+        return
+    bucket = APP_LOWER_MULTI.setdefault(name.lower(), [])
+    if package not in bucket:
+        bucket.append(package)
+
+
+for _package, _name in COMMON_APP_MAPPER.items():
+    _register_app_name(_name, _package)
+for _name, _package in APP_DICT.items():
+    _register_app_name(_name, _package)
+for _name, _package in REAL_DEVICE_APP_DICT.items():
+    _register_app_name(_name, _package)
 
 
 class AndroidController:
@@ -264,16 +292,21 @@ class AndroidController:
                 command=command,
             )
 
-        # 1) Known app: resolve its package via the name->package mapping.
-        package = APP_LOWER_DICT.get(app_name.lower())
+        # 1) Collect every candidate package this friendly name maps to (across
+        #    the emulator + real-device dicts), plus the name itself if it is
+        #    already a package id installed on the device.
+        candidates = list(APP_LOWER_MULTI.get(app_name.lower(), []))
+        if self._is_installed_package(app_name) and app_name not in candidates:
+            candidates.append(app_name)
 
-        # 2) Unknown name that already looks like a package id (e.g.
-        #    "com.google.android.apps.maps") and is actually installed:
-        #    launch it directly without requiring a mapping entry.
-        if package is None and self._is_installed_package(app_name):
-            package = app_name
+        # 2) Prefer candidates actually installed on THIS device, so a name
+        #    shared by the emulator image and a real phone (e.g. "Gallery",
+        #    "Camera") launches the one that exists. Fall back to the remaining
+        #    candidates (emulator parity when the install check is unavailable).
+        installed = [p for p in candidates if self._is_installed_package(p)]
+        ordered = installed + [p for p in candidates if p not in installed]
 
-        if package is not None:
+        for package in ordered:
             command = (
                 f"adb -s {self.device} shell monkey -p {package} "
                 f"-c android.intent.category.LAUNCHER 1"
@@ -283,7 +316,8 @@ class AndroidController:
                 return ret
 
         logger.warning(
-            f"Failed to launch the app: {app_name}. Available app list: {list(APP_LOWER_DICT.keys())}"
+            f"Failed to launch the app: {app_name} (tried {ordered or 'no candidates'}). "
+            f"Available app list: {sorted(APP_LOWER_MULTI.keys())}"
         )
         return AdbResponse(
             success=False,
@@ -323,11 +357,14 @@ class AndroidController:
             if line.startswith("package:")
         }
         # Build package -> friendly name, preferring APP_DICT (English-leaning)
-        # entries, then filling gaps from COMMON_APP_MAPPER.
+        # entries, then COMMON_APP_MAPPER, then real-device packages (Google/
+        # Pixel apps not in the emulator image, e.g. Google Photos / GCam).
         pkg_to_name: dict[str, str] = {}
         for name, pkg in APP_DICT.items():
             pkg_to_name.setdefault(pkg, name)
         for pkg, name in COMMON_APP_MAPPER.items():
+            pkg_to_name.setdefault(pkg, name)
+        for name, pkg in REAL_DEVICE_APP_DICT.items():
             pkg_to_name.setdefault(pkg, name)
         names = {pkg_to_name[pkg] for pkg in installed if pkg in pkg_to_name}
         return sorted(names, key=lambda n: (not n.isascii(), n.casefold()))

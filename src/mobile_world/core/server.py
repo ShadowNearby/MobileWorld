@@ -394,6 +394,16 @@ def step(req: StepRequest):
             app_name = action.app_name
             logger.info(f"[STEP] Executing open_app: {app_name}")
             ret = ctr.launch_app(app_name)
+            # Surface a launch failure as a textual result so the agent learns it
+            # (the non-MCP client otherwise drops AdbResponse and the agent loops
+            # re-issuing open_app on an unchanged screen). A successful
+            # AdbResponse still collapses to its `.output` below.
+            if isinstance(ret, AdbResponse) and not ret.success:
+                ret = (
+                    f"open_app failed: {ret.error}. The app may not be installed under "
+                    f"that name — pick another name from the available app list, or open "
+                    f"it from the home screen / app drawer instead."
+                )
 
         elif action_type == WAIT:
             # Sleep is tunable via MW_WAIT_SECONDS (default 1.0 = upstream

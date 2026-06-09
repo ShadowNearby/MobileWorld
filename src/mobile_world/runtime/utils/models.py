@@ -422,16 +422,64 @@ COMMON_APP_MAPPER = {
 }
 
 
+# Real-device (Pixel / Google) packages for the friendly names the benchmark and
+# the RelayAgent fallback use. Kept SEPARATE from APP_DICT (which targets the
+# benchmark emulator image) so `open_app` also resolves on a physical phone:
+# `launch_app` collects candidates from all dicts and launches the first one
+# actually installed (see controller.APP_LOWER_MULTI). Many names may point at
+# the same package. Add an entry here whenever a benchmark/RA app exists on a
+# real device under a package that differs from the emulator's.
+REAL_DEVICE_APP_DICT = {
+    # --- benchmark app names whose package differs on a Pixel ---
+    "Gallery": "com.google.android.apps.photos",
+    "Photos": "com.google.android.apps.photos",
+    "Google Photos": "com.google.android.apps.photos",
+    "相册": "com.google.android.apps.photos",
+    "图库": "com.google.android.apps.photos",
+    "Camera": "com.google.android.GoogleCamera",
+    "相机": "com.google.android.GoogleCamera",
+    "Mail": "com.google.android.gm",
+    "Gmail": "com.google.android.gm",
+    "Messages": "com.google.android.apps.messaging",
+    "Calendar": "com.google.android.calendar",
+    "Files": "com.google.android.apps.nbu.files",
+    "Docreader": "cn.wps.moffice_eng",
+    "Mattermost": "com.mattermost.rn",
+    "Mastodon": "org.joinmastodon.android",
+    # --- RelayAgent cross-app + other apps installed on the test device ---
+    "Copilot": "com.microsoft.copilot",
+    "M365 Copilot": "com.microsoft.copilot",
+    "Microsoft 365": "com.microsoft.office.officehubrow",
+    "Claude": "com.anthropic.claude",
+    "Notion": "notion.id",
+    "Walmart": "com.walmart.android",
+    "Instacart": "com.instacart.client",
+    "Instagram": "com.instagram.android",
+    "Canva": "com.canva.editor",
+    "Priceline": "com.priceline.android.negotiator",
+    "Super Proxy": "com.scheler.superproxy",
+    "Just Eat": "com.justeat.app.uk",
+    "应用宝": "com.tencent.android.qqdownloader",
+    "Fake GPS": "com.blogspot.newapphorizons.fakegps",
+    "Qwen": "ai.qwenlm.chat.android",
+}
+
+
 def available_app_names() -> list[str]:
     """Human-readable app names that `open_app` can resolve to a package.
 
     These are the friendly names that `AndroidController.launch_app` knows how to
-    map to a package id (via `APP_DICT` and `COMMON_APP_MAPPER`). Injected into
-    the agent prompt so the model picks `open_app`'s `app_name` from a known set
-    instead of guessing. Deduplicated case-insensitively; ASCII names first, then
-    the rest, each group sorted alphabetically.
+    map to a package id (via `APP_DICT`, `COMMON_APP_MAPPER` and
+    `REAL_DEVICE_APP_DICT`). Injected into the agent prompt so the model picks
+    `open_app`'s `app_name` from a known set instead of guessing. Deduplicated
+    case-insensitively; ASCII names first, then the rest, each group sorted
+    alphabetically.
     """
-    names = list(APP_DICT.keys()) + list(COMMON_APP_MAPPER.values())
+    names = (
+        list(APP_DICT.keys())
+        + list(COMMON_APP_MAPPER.values())
+        + list(REAL_DEVICE_APP_DICT.keys())
+    )
     seen: set[str] = set()
     unique: list[str] = []
     for name in names:

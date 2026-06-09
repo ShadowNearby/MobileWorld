@@ -192,9 +192,24 @@ class AndroidEnvClient:
             ask_user_response = message.get("result", "")
             logger.debug(f"ask_user_response: {ask_user_response}")
 
+        # Surface an open_app launch failure (server returns it as a textual
+        # `result`) to the agent via tool_call, so it can correct the app name
+        # instead of looping on a no-op open_app. Non-MCP path otherwise drops
+        # the step result entirely.
+        tool_call = None
+        if action.action_type == "open_app" and response.status_code == 200:
+            try:
+                result = response.json().get("result")
+            except ValueError:
+                result = None
+            if isinstance(result, str) and result.startswith("open_app failed"):
+                tool_call = {"text": result}
+                logger.warning(f"open_app feedback to agent: {result}")
+
         return Observation(
             screenshot=res,
             ask_user_response=ask_user_response,
+            tool_call=tool_call,
         )
 
     def get_suite_task_list(
